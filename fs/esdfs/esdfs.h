@@ -390,10 +390,10 @@ static inline void esdfs_set_lower_mode(struct esdfs_sb_info *sbi,
 }
 
 static inline void esdfs_set_upper_owner(struct esdfs_sb_info *sbi,
-		uid_t *uid, gid_t *gid)
+		kuid_t *uid, kgid_t *gid)
 {
-	*uid = sbi->upper_perms.uid;
-	*gid = sbi->upper_perms.gid;
+	*uid = KUIDT_INIT(sbi->upper_perms.uid);
+	*gid = KGIDT_INIT(sbi->upper_perms.gid);
 }
 
 static inline void esdfs_set_upper_mode(struct esdfs_sb_info *sbi,
@@ -497,8 +497,8 @@ static inline const struct cred *esdfs_override_creds(
 		*mask = xchg(&current->fs->umask, *mask & S_IRWXUGO);
 	}
 
-	creds->fsuid = sbi->lower_perms.uid;
-	creds->fsgid = sbi->lower_perms.gid;
+	creds->fsuid = KUIDT_INIT(sbi->lower_perms.uid);
+	creds->fsgid = KGIDT_INIT(sbi->lower_perms.gid);
 	esdfs_override_secid(sbi, creds);
 
 	/* this installs the new creds into current, which we must destroy */

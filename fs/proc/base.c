@@ -1009,7 +1009,7 @@ out:
 
 static int oom_adjust_permission(struct inode *inode, int mask)
 {
-	uid_t uid;
+	kuid_t uid;
 	struct task_struct *p;
 
 	p = get_proc_task(inode);
@@ -1022,7 +1022,7 @@ static int oom_adjust_permission(struct inode *inode, int mask)
 	 * System Server (uid == 1000) is granted access to oom_adj of all 
 	 * android applications (uid > 10000) as and services (uid >= 1000)
 	 */
-	if (p && (current_fsuid() == 1000) && (uid >= 1000)) {
+	if (p && (uid_eq(current_fsuid(), GLOBAL_SYSTEM_UID)) && (uid_eq(uid, GLOBAL_SYSTEM_UID))) {
 		if (inode->i_mode >> 6 & mask) {
 			return 0;
 		}

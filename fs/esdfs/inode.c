@@ -311,8 +311,8 @@ static int esdfs_permission(struct inode *inode, int mask)
 
 	/* Basic checking of the lower inode (can't override creds here) */
 	lower_inode = esdfs_lower_inode(inode);
-	if (lower_inode->i_uid != sbi->lower_perms.uid ||
-	    lower_inode->i_gid != sbi->lower_perms.gid ||
+	if (!uid_eq(lower_inode->i_uid, KUIDT_INIT(sbi->lower_perms.uid)) ||
+	    !gid_eq(lower_inode->i_gid, KGIDT_INIT(sbi->lower_perms.gid)) ||
 	    S_ISSOCK(lower_inode->i_mode) ||
 	    S_ISLNK(lower_inode->i_mode) ||
 	    S_ISBLK(lower_inode->i_mode) ||
