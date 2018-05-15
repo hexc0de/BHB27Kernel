@@ -29,6 +29,7 @@
 
 #include <linux/vmalloc.h>
 
+/*
 static inline void kvfree(const void *addr)
 {
 	if (is_vmalloc_addr(addr))
@@ -36,6 +37,7 @@ static inline void kvfree(const void *addr)
 	else
 		kfree(addr);
 }
+*/
 
 static __inline__ void *drm_calloc_large(size_t nmemb, size_t size)
 {
