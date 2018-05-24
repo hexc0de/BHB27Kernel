@@ -337,6 +337,7 @@ static const struct dma_buf_ops drm_gem_prime_dmabuf_ops =  {
 struct dma_buf *drm_gem_prime_export(struct drm_device *dev,
 				     struct drm_gem_object *obj, int flags)
 {
+/*
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 
 	exp_info.ops = &drm_gem_prime_dmabuf_ops;
@@ -346,8 +347,9 @@ struct dma_buf *drm_gem_prime_export(struct drm_device *dev,
 
 	if (dev->driver->gem_prime_res_obj)
 		exp_info.resv = dev->driver->gem_prime_res_obj(obj);
+*/
 
-	return dma_buf_export(&exp_info);
+	return dma_buf_export(obj, &drm_gem_prime_dmabuf_ops, obj->size, flags, dev->driver->gem_prime_res_obj(obj));
 }
 EXPORT_SYMBOL(drm_gem_prime_export);
 

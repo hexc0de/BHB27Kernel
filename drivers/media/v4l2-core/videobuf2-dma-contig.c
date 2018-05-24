@@ -405,14 +405,16 @@ static struct dma_buf *vb2_dc_get_dmabuf(void *buf_priv)
 	if (WARN_ON(!buf->sgt_base))
 		return NULL;
 
+/*
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 
 	exp_info.ops = &vb2_dc_dmabuf_ops;
 	exp_info.size = buf->size;
 	exp_info.flags = 0;
 	exp_info.priv = buf;
+*/
 
-	dbuf = dma_buf_export(&exp_info);
+	dbuf = dma_buf_export(buf, &vb2_dc_dmabuf_ops, buf->size, 0, NULL);
 	if (IS_ERR(dbuf))
 		return NULL;
 
