@@ -15,6 +15,7 @@
 
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <uapi/linux/sched/types.h>
 #include <linux/kthread.h>
 #include <linux/export.h>
 #include <linux/wait.h>
@@ -27,6 +28,8 @@
 #include <linux/mmc/sdio_func.h>
 
 #include "sdio_ops.h"
+#include "core.h"
+#include "card.h"
 
 static int process_sdio_pending_irqs(struct mmc_host *host)
 {
@@ -53,21 +56,31 @@ static int process_sdio_pending_irqs(struct mmc_host *host)
 		return ret;
 	}
 
+	if (pending && mmc_card_broken_irq_polling(card) &&
+	    !(host->caps & MMC_CAP_SDIO_IRQ)) {
+		unsigned char dummy;
+
+		/* A fake interrupt could be created when we poll SDIO_CCCR_INTx
+		 * register with a Marvell SD8797 card. A dummy CMD52 read to
+		 * function 0 register 0xff can avoid this.
+		 */
+		mmc_io_rw_direct(card, 0, 0, 0xff, 0, &dummy);
+	}
+
 	count = 0;
 	for (i = 1; i <= 7; i++) {
 		if (pending & (1 << i)) {
 			func = card->sdio_func[i - 1];
 			if (!func) {
-				pr_warning("%s: pending IRQ for "
-					"non-existent function\n",
+				pr_warn("%s: pending IRQ for non-existent function\n",
 					mmc_card_id(card));
 				ret = -EINVAL;
 			} else if (func->irq_handler) {
 				func->irq_handler(func);
 				count++;
 			} else {
-				pr_warning("%s: pending IRQ with no handler\n",
-				       sdio_func_id(func));
+				pr_warn("%s: pending IRQ with no handler\n",
+					sdio_func_id(func));
 				ret = -EINVAL;
 			}
 		}
@@ -79,13 +92,39 @@ static int process_sdio_pending_irqs(struct mmc_host *host)
 	return ret;
 }
 
+void sdio_run_irqs(struct mmc_host *host)
+{
+	mmc_claim_host(host);
+	if (host->sdio_irqs) {
+		host->sdio_irq_pending = true;
+		process_sdio_pending_irqs(host);
+		if (host->ops->ack_sdio_irq)
+			host->ops->ack_sdio_irq(host);
+	}
+	mmc_release_host(host);
+}
+EXPORT_SYMBOL_GPL(sdio_run_irqs);
+
+void sdio_irq_work(struct work_struct *work)
+{
+	struct mmc_host *host =
+		container_of(work, struct mmc_host, sdio_irq_work.work);
+
+	sdio_run_irqs(host);
+}
+
+void sdio_signal_irq(struct mmc_host *host)
+{
+	queue_delayed_work(system_wq, &host->sdio_irq_work, 0);
+}
+EXPORT_SYMBOL_GPL(sdio_signal_irq);
+
 static int sdio_irq_thread(void *_host)
 {
 	struct mmc_host *host = _host;
 	struct sched_param param = { .sched_priority = 1 };
 	unsigned long period, idle_period;
 	int ret;
-	bool ws;
 
 	sched_setscheduler(current, SCHED_FIFO, &param);
 
@@ -119,17 +158,6 @@ static int sdio_irq_thread(void *_host)
 		ret = __mmc_claim_host(host, &host->sdio_irq_thread_abort);
 		if (ret)
 			break;
-		ws = false;
-		/*
-		 * prevent suspend if it has started when scheduled;
-		 * 100 msec (approx. value) should be enough for the system to
-		 * resume and attend to the card's request
-		 */
-		if ((host->dev_status == DEV_SUSPENDING) ||
-		    (host->dev_status == DEV_SUSPENDED)) {
-			pm_wakeup_event(&host->card->dev, 100);
-			ws = true;
-		}
 		ret = process_sdio_pending_irqs(host);
 		host->sdio_irq_pending = false;
 		mmc_release_host(host);
@@ -161,27 +189,15 @@ static int sdio_irq_thread(void *_host)
 		}
 
 		set_current_state(TASK_INTERRUPTIBLE);
-		if (host->caps & MMC_CAP_SDIO_IRQ) {
-			mmc_host_clk_hold(host);
+		if (host->caps & MMC_CAP_SDIO_IRQ)
 			host->ops->enable_sdio_irq(host, 1);
-			mmc_host_clk_release(host);
-		}
-		/*
-		 * function drivers would have processed the event from card
-		 * unless suspended, hence release wake source
-		 */
-		if (ws && (host->dev_status == DEV_RESUMED))
-			pm_relax(&host->card->dev);
 		if (!kthread_should_stop())
 			schedule_timeout(period);
 		set_current_state(TASK_RUNNING);
 	} while (!kthread_should_stop());
 
-	if (host->caps & MMC_CAP_SDIO_IRQ) {
-		mmc_host_clk_hold(host);
+	if (host->caps & MMC_CAP_SDIO_IRQ)
 		host->ops->enable_sdio_irq(host, 0);
-		mmc_host_clk_release(host);
-	}
 
 	pr_debug("%s: IRQ thread exiting with code %d\n",
 		 mmc_hostname(host), ret);
@@ -196,14 +212,18 @@ static int sdio_card_irq_get(struct mmc_card *card)
 	WARN_ON(!host->claimed);
 
 	if (!host->sdio_irqs++) {
-		atomic_set(&host->sdio_irq_thread_abort, 0);
-		host->sdio_irq_thread =
-			kthread_run(sdio_irq_thread, host, "ksdioirqd/%s",
-				mmc_hostname(host));
-		if (IS_ERR(host->sdio_irq_thread)) {
-			int err = PTR_ERR(host->sdio_irq_thread);
-			host->sdio_irqs--;
-			return err;
+		if (!(host->caps2 & MMC_CAP2_SDIO_IRQ_NOTHREAD)) {
+			atomic_set(&host->sdio_irq_thread_abort, 0);
+			host->sdio_irq_thread =
+				kthread_run(sdio_irq_thread, host,
+					    "ksdioirqd/%s", mmc_hostname(host));
+			if (IS_ERR(host->sdio_irq_thread)) {
+				int err = PTR_ERR(host->sdio_irq_thread);
+				host->sdio_irqs--;
+				return err;
+			}
+		} else if (host->caps & MMC_CAP_SDIO_IRQ) {
+			host->ops->enable_sdio_irq(host, 1);
 		}
 	}
 
@@ -215,11 +235,17 @@ static int sdio_card_irq_put(struct mmc_card *card)
 	struct mmc_host *host = card->host;
 
 	WARN_ON(!host->claimed);
-	BUG_ON(host->sdio_irqs < 1);
+
+	if (host->sdio_irqs < 1)
+		return -EINVAL;
 
 	if (!--host->sdio_irqs) {
-		atomic_set(&host->sdio_irq_thread_abort, 1);
-		kthread_stop(host->sdio_irq_thread);
+		if (!(host->caps2 & MMC_CAP2_SDIO_IRQ_NOTHREAD)) {
+			atomic_set(&host->sdio_irq_thread_abort, 1);
+			kthread_stop(host->sdio_irq_thread);
+		} else if (host->caps & MMC_CAP_SDIO_IRQ) {
+			host->ops->enable_sdio_irq(host, 0);
+		}
 	}
 
 	return 0;
@@ -258,8 +284,8 @@ int sdio_claim_irq(struct sdio_func *func, sdio_irq_handler_t *handler)
 	int ret;
 	unsigned char reg;
 
-	BUG_ON(!func);
-	BUG_ON(!func->card);
+	if (!func)
+		return -EINVAL;
 
 	pr_debug("SDIO: Enabling IRQ for %s...\n", sdio_func_id(func));
 
@@ -301,8 +327,8 @@ int sdio_release_irq(struct sdio_func *func)
 	int ret;
 	unsigned char reg;
 
-	BUG_ON(!func);
-	BUG_ON(!func->card);
+	if (!func)
+		return -EINVAL;
 
 	pr_debug("SDIO: Disabling IRQ for %s...\n", sdio_func_id(func));
 

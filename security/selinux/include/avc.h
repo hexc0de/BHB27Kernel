@@ -1,7 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Access vector cache interface for object managers.
  *
- * Author : Stephen Smalley, <sds@epoch.ncsc.mil>
+ * Author : Stephen Smalley, <sds@tycho.nsa.gov>
  */
 #ifndef _SELINUX_AVC_H_
 #define _SELINUX_AVC_H_
@@ -130,7 +131,8 @@ static inline int avc_audit(u32 ssid, u32 tsid,
 			    u16 tclass, u32 requested,
 			    struct av_decision *avd,
 			    int result,
-			    struct common_audit_data *a, unsigned flags)
+			    struct common_audit_data *a,
+			    int flags)
 {
 	u32 audited, denied;
 	audited = avc_audit_required(requested, avd, result, 0, &denied);
@@ -148,17 +150,17 @@ int avc_has_perm_noaudit(u32 ssid, u32 tsid,
 			 unsigned flags,
 			 struct av_decision *avd);
 
+int avc_has_perm(u32 ssid, u32 tsid,
+		 u16 tclass, u32 requested,
+		 struct common_audit_data *auditdata);
 int avc_has_perm_flags(u32 ssid, u32 tsid,
 		       u16 tclass, u32 requested,
 		       struct common_audit_data *auditdata,
-		       unsigned);
+		       int flags);
 
-static inline int avc_has_perm(u32 ssid, u32 tsid,
-			       u16 tclass, u32 requested,
-			       struct common_audit_data *auditdata)
-{
-	return avc_has_perm_flags(ssid, tsid, tclass, requested, auditdata, 0);
-}
+int avc_has_extended_perms(u32 ssid, u32 tsid, u16 tclass, u32 requested,
+		u8 driver, u8 perm, struct common_audit_data *ad);
+
 
 int avc_has_extended_perms(u32 ssid, u32 tsid, u16 tclass, u32 requested,
 		u8 driver, u8 perm, struct common_audit_data *ad);

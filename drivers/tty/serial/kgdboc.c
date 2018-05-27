@@ -45,7 +45,7 @@ static int kgdboc_reset_connect(struct input_handler *handler,
 {
 	input_reset_device(dev);
 
-	/* Retrun an error - we do not want to bind, just to reset */
+	/* Return an error - we do not want to bind, just to reset */
 	return -ENODEV;
 }
 
@@ -245,7 +245,8 @@ static void kgdboc_put_char(u8 chr)
 					kgdb_tty_line, chr);
 }
 
-static int param_set_kgdboc_var(const char *kmessage, struct kernel_param *kp)
+static int param_set_kgdboc_var(const char *kmessage,
+				const struct kernel_param *kp)
 {
 	int len = strlen(kmessage);
 

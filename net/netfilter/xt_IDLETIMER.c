@@ -49,6 +49,7 @@
 #include <linux/notifier.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
+#include <net/inet_sock.h>
 
 struct idletimer_tg_attr {
 	struct attribute attr;
@@ -164,6 +165,8 @@ static void notify_netlink_uevent(const char *iface, struct idletimer_tg *timer)
 		 timestamp_msg, uid_msg);
 	kobject_uevent_env(idletimer_tg_kobj, KOBJ_CHANGE, envp);
 	return;
+
+
 }
 
 static
@@ -284,6 +287,7 @@ static int idletimer_tg_create(struct idletimer_tg_info *info)
 		goto out;
 	}
 
+	sysfs_attr_init(&info->timer->attr.attr);
 	info->timer->attr.attr.name = kstrdup(info->label, GFP_KERNEL);
 	if (!info->timer->attr.attr.name) {
 		ret = -ENOMEM;
@@ -319,10 +323,10 @@ static int idletimer_tg_create(struct idletimer_tg_info *info)
 		printk(KERN_WARNING "[%s] Failed to register pm notifier %d\n",
 				__func__, ret);
 
+	INIT_WORK(&info->timer->work, idletimer_tg_work);
+
 	mod_timer(&info->timer->timer,
 		  msecs_to_jiffies(info->timeout * 1000) + jiffies);
-
-	INIT_WORK(&info->timer->work, idletimer_tg_work);
 
 	return 0;
 
@@ -351,12 +355,8 @@ static void reset_timer(const struct idletimer_tg_info *info,
 
 		/* Stores the uid resposible for waking up the radio */
 		if (skb && (skb->sk)) {
-			struct sock *sk = skb->sk;
-			read_lock_bh(&sk->sk_callback_lock);
-			if ((sk->sk_socket) && (sk->sk_socket->file) &&
-		    (sk->sk_socket->file->f_cred))
-				timer->uid = sk->sk_socket->file->f_cred->uid;
-			read_unlock_bh(&sk->sk_callback_lock);
+			timer->uid = from_kuid_munged(current_user_ns(),
+					sock_i_uid(skb_to_full_sk(skb)));
 		}
 
 		/* checks if there is a pending inactive notification*/
@@ -378,13 +378,23 @@ static void reset_timer(const struct idletimer_tg_info *info,
  * The actual xt_tables plugin.
  */
 static unsigned int idletimer_tg_target(struct sk_buff *skb,
-		const struct xt_action_param *par)
+					 const struct xt_action_param *par)
 {
 	const struct idletimer_tg_info *info = par->targinfo;
+	unsigned long now = jiffies;
+
 	pr_debug("resetting timer %s, timeout period %u\n",
 		 info->label, info->timeout);
 
 	BUG_ON(!info->timer);
+
+	info->timer->active = true;
+
+	if (time_before(info->timer->timer.expires, now)) {
+		schedule_work(&info->timer->work);
+		pr_debug("Starting timer %s (Expired, Jiffies): %lu, %lu\n",
+			 info->label, info->timer->timer.expires, now);
+	}
 
 	/* TODO: Avoid modifying timers on each packet */
 	reset_timer(info, skb);
@@ -395,13 +405,17 @@ static int idletimer_tg_checkentry(const struct xt_tgchk_param *par)
 {
 	struct idletimer_tg_info *info = par->targinfo;
 	int ret;
+
 	pr_debug("checkentry targinfo %s\n", info->label);
 
 	if (info->timeout == 0) {
 		pr_debug("timeout value is zero\n");
 		return -EINVAL;
 	}
-
+	if (info->timeout >= INT_MAX / 1000) {
+		pr_debug("timeout value is too big\n");
+		return -EINVAL;
+	}
 	if (info->label[0] == '\0' ||
 	    strnlen(info->label,
 		    MAX_IDLETIMER_LABEL_SIZE) == MAX_IDLETIMER_LABEL_SIZE) {
@@ -425,7 +439,9 @@ static int idletimer_tg_checkentry(const struct xt_tgchk_param *par)
 			return ret;
 		}
 	}
+
 	mutex_unlock(&list_mutex);
+
 	return 0;
 }
 
@@ -444,6 +460,7 @@ static void idletimer_tg_destroy(const struct xt_tgdtor_param *par)
 		del_timer_sync(&info->timer->timer);
 		sysfs_remove_file(idletimer_tg_kobj, &info->timer->attr.attr);
 		unregister_pm_notifier(&info->timer->pm_nb);
+		cancel_work_sync(&info->timer->work);
 		kfree(info->timer->attr.attr.name);
 		kfree(info->timer);
 	} else {
@@ -460,6 +477,7 @@ static struct xt_target idletimer_tg __read_mostly = {
 	.family		= NFPROTO_UNSPEC,
 	.target		= idletimer_tg_target,
 	.targetsize     = sizeof(struct idletimer_tg_info),
+	.usersize	= offsetof(struct idletimer_tg_info, timer),
 	.checkentry	= idletimer_tg_checkentry,
 	.destroy        = idletimer_tg_destroy,
 	.me		= THIS_MODULE,

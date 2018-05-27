@@ -1,21 +1,11 @@
-# When adding new entries keep the list in alphabetical order
-CFLAGS_scm.o :=$(call as-instr,.arch_extension sec,-DREQUIRES_SEC=1)
-
-obj-y		+= qdsp6v2/
-
-obj-$(CONFIG_MAXIMUM_CURRENT_THROTTLING) += mct.o
-obj-$(CONFIG_MSM_BAM_DMUX) += bam_dmux.o
-obj-$(CONFIG_MSM_IPC_ROUTER_HSIC_XPRT) += ipc_router_hsic_xprt.o
-obj-$(CONFIG_MSM_IPC_ROUTER_SMD_XPRT) += ipc_router_smd_xprt.o
-obj-$(CONFIG_MSM_MEMORY_DUMP) += memory_dump.o
-obj-$(CONFIG_MSM_QMI_INTERFACE) += qmi_interface.o
-
-obj-$(CONFIG_MSM_SCM) += scm.o
-
-obj-$(CONFIG_MSM_SMEM) += smem.o smem_debug.o
-obj-$(CONFIG_MSM_SMEM_LOGGING) += smem_log.o
-obj-$(CONFIG_MSM_WATCHDOG_V2) += watchdog_v2.o
-obj-$(CONFIG_MEM_SHARE_QMI_SERVICE)		+= memshare/
-obj-y		+= socinfo.o
-obj-$(CONFIG_STATE_NOTIFIER)		+= state_notifier.o
-obj-y 					+= hotplug/
+# SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_QCOM_GLINK_SSR) +=	glink_ssr.o
+obj-$(CONFIG_QCOM_GSBI)	+=	qcom_gsbi.o
+obj-$(CONFIG_QCOM_MDT_LOADER)	+= mdt_loader.o
+obj-$(CONFIG_QCOM_PM)	+=	spm.o
+obj-$(CONFIG_QCOM_SMD_RPM)	+= smd-rpm.o
+obj-$(CONFIG_QCOM_SMEM) +=	smem.o
+obj-$(CONFIG_QCOM_SMEM_STATE) += smem_state.o
+obj-$(CONFIG_QCOM_SMP2P)	+= smp2p.o
+obj-$(CONFIG_QCOM_SMSM)	+= smsm.o
+obj-$(CONFIG_QCOM_WCNSS_CTRL) += wcnss_ctrl.o

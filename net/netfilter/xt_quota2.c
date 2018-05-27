@@ -21,8 +21,27 @@
 
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter/xt_quota2.h>
+
 #ifdef CONFIG_NETFILTER_XT_MATCH_QUOTA2_LOG
-#include <linux/netfilter_ipv4/ipt_ULOG.h>
+/* For compatibility, these definitions are copied from the
+ * deprecated header file <linux/netfilter_ipv4/ipt_ULOG.h> */
+#define ULOG_MAC_LEN	80
+#define ULOG_PREFIX_LEN	32
+
+/* Format of the ULOG packets passed through netlink */
+typedef struct ulog_packet_msg {
+	unsigned long mark;
+	long timestamp_sec;
+	long timestamp_usec;
+	unsigned int hook;
+	char indev_name[IFNAMSIZ];
+	char outdev_name[IFNAMSIZ];
+	size_t data_len;
+	char prefix[ULOG_PREFIX_LEN];
+	unsigned char mac_len;
+	unsigned char mac[ULOG_MAC_LEN];
+	unsigned char payload[0];
+} ulog_packet_msg_t;
 #endif
 
 /**
@@ -52,12 +71,9 @@ static DEFINE_SPINLOCK(counter_list_lock);
 
 static struct proc_dir_entry *proc_xt_quota;
 static unsigned int quota_list_perms = S_IRUGO | S_IWUSR;
-static unsigned int quota_list_uid   = 0;
-static unsigned int quota_list_gid   = 0;
+static kuid_t quota_list_uid = KUIDT_INIT(0);
+static kgid_t quota_list_gid = KGIDT_INIT(0);
 module_param_named(perms, quota_list_perms, uint, S_IRUGO | S_IWUSR);
-module_param_named(uid, quota_list_uid, uint, S_IRUGO | S_IWUSR);
-module_param_named(gid, quota_list_gid, uint, S_IRUGO | S_IWUSR);
-
 
 #ifdef CONFIG_NETFILTER_XT_MATCH_QUOTA2_LOG
 static void quota2_log(unsigned int hooknum,
@@ -90,7 +106,7 @@ static void quota2_log(unsigned int hooknum,
 		return;
 	}
 	pm = nlmsg_data(nlh);
-	if (skb->tstamp.tv64 == 0)
+	if (skb->tstamp == 0)
 		__net_timestamp((struct sk_buff *)skb);
 	pm->data_len = 0;
 	pm->hook = hooknum;
@@ -123,7 +139,7 @@ static void quota2_log(unsigned int hooknum,
 #endif  /* if+else CONFIG_NETFILTER_XT_MATCH_QUOTA2_LOG */
 
 static ssize_t quota_proc_read(struct file *file, char __user *buf,
-			       size_t size, loff_t *ppos)
+			   size_t size, loff_t *ppos)
 {
 	struct xt_quota_counter *e = PDE_DATA(file_inode(file));
 	char tmp[24];
@@ -136,7 +152,7 @@ static ssize_t quota_proc_read(struct file *file, char __user *buf,
 }
 
 static ssize_t quota_proc_write(struct file *file, const char __user *input,
-				size_t size, loff_t *ppos)
+                            size_t size, loff_t *ppos)
 {
 	struct xt_quota_counter *e = PDE_DATA(file_inode(file));
 	char buf[sizeof("18446744073709551616")];
@@ -310,10 +326,10 @@ quota_mt2(const struct sk_buff *skb, struct xt_action_param *par)
 		} else {
 			/* We are transitioning, log that fact. */
 			if (e->quota) {
-				quota2_log(par->hooknum,
+				quota2_log(xt_hooknum(par),
 					   skb,
-					   par->in,
-					   par->out,
+					   xt_in(par),
+					   xt_out(par),
 					   q->name);
 			}
 			/* we do not allow even small packets from now on */

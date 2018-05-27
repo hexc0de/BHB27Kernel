@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __IPC_NAMESPACE_H__
 #define __IPC_NAMESPACE_H__
 
@@ -6,29 +7,24 @@
 #include <linux/rwsem.h>
 #include <linux/notifier.h>
 #include <linux/nsproxy.h>
-
-/*
- * ipc namespace events
- */
-#define IPCNS_MEMCHANGED   0x00000001   /* Notify lowmem size changed */
-#define IPCNS_CREATED  0x00000002   /* Notify new ipc namespace created */
-#define IPCNS_REMOVED  0x00000003   /* Notify ipc namespace removed */
-
-#define IPCNS_CALLBACK_PRI 0
+#include <linux/ns_common.h>
+#include <linux/refcount.h>
+#include <linux/rhashtable.h>
 
 struct user_namespace;
 
 struct ipc_ids {
 	int in_use;
 	unsigned short seq;
-	unsigned short seq_max;
+	bool tables_initialized;
 	struct rw_semaphore rwsem;
 	struct idr ipcs_idr;
 	int next_id;
+	struct rhashtable key_ht;
 };
 
 struct ipc_namespace {
-	atomic_t	count;
+	refcount_t	count;
 	struct ipc_ids	ids[3];
 
 	int		sem_ctls[4];
@@ -39,7 +35,6 @@ struct ipc_namespace {
 	unsigned int	msg_ctlmni;
 	atomic_t	msg_bytes;
 	atomic_t	msg_hdrs;
-	int		auto_msgmni;
 
 	size_t		shm_ctlmax;
 	size_t		shm_ctlall;
@@ -68,57 +63,17 @@ struct ipc_namespace {
 
 	/* user_ns which owns the ipc ns */
 	struct user_namespace *user_ns;
+	struct ucounts *ucounts;
 
-	unsigned int	proc_inum;
-
-	/* allow others to piggyback on ipc_namesspaces */
-	void *gen;			/* for others' private stuff */
-};
-
-/*
- * To access to the per-ipc generic data:
- * 1. (un)register ops with (un)register_peripc_operations()
- * 2. call ipc_assign_generic() to put private data on the ipc_namespace
- * 3. call ipc_access_generic() to access the private data
- * 4. do not change the pointer during the lifetime of ipc_namespace
- *
- * Modeled after generic net-ns pointers (commit dec827d), simplified for
- * a single user case for now:
- * 5. only one caller can register at a time
- * 6. caller must register at boot time (not to be used by modules)
- */
-struct peripc_operations {
-	int (*init)(struct ipc_namespace *);
-	void (*exit)(struct ipc_namespace *);
-};
-
-static inline void ipc_assign_generic(struct ipc_namespace *ns, void *data)
-{ ns->gen = data; }
-
-static inline void *ipc_access_generic(struct ipc_namespace *ns)
-{ return ns->gen; }
-
-extern int register_peripc_ops(struct peripc_operations *ops);
-extern void unregister_peripc_ops(struct peripc_operations *ops);
+	struct ns_common ns;
+} __randomize_layout;
 
 extern struct ipc_namespace init_ipc_ns;
-extern atomic_t nr_ipc_ns;
-
 extern spinlock_t mq_lock;
 
 #ifdef CONFIG_SYSVIPC
-extern int register_ipcns_notifier(struct ipc_namespace *);
-extern int cond_register_ipcns_notifier(struct ipc_namespace *);
-extern void unregister_ipcns_notifier(struct ipc_namespace *);
-extern int ipcns_notify(unsigned long);
 extern void shm_destroy_orphaned(struct ipc_namespace *ns);
 #else /* CONFIG_SYSVIPC */
-static inline int register_ipcns_notifier(struct ipc_namespace *ns)
-{ return 0; }
-static inline int cond_register_ipcns_notifier(struct ipc_namespace *ns)
-{ return 0; }
-static inline void unregister_ipcns_notifier(struct ipc_namespace *ns) { }
-static inline int ipcns_notify(unsigned long l) { return 0; }
 static inline void shm_destroy_orphaned(struct ipc_namespace *ns) {}
 #endif /* CONFIG_SYSVIPC */
 
@@ -168,7 +123,7 @@ extern struct ipc_namespace *copy_ipcs(unsigned long flags,
 static inline struct ipc_namespace *get_ipc_ns(struct ipc_namespace *ns)
 {
 	if (ns)
-		atomic_inc(&ns->count);
+		refcount_inc(&ns->count);
 	return ns;
 }
 
