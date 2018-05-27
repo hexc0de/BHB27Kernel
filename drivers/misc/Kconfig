@@ -51,15 +51,6 @@ config AD525X_DPOT_SPI
 	  To compile this driver as a module, choose M here: the
 	  module will be called ad525x_dpot-spi.
 
-config ATMEL_PWM
-	tristate "Atmel AT32/AT91 PWM support"
-	depends on HAVE_CLK
-	help
-	  This option enables device driver support for the PWM channels
-	  on certain Atmel processors.  Pulse Width Modulation is used for
-	  purposes including software controlled power-efficient backlights
-	  on LCD displays, motor control, and waveform generation.
-
 config ATMEL_TCLIB
 	bool "Atmel AT32/AT91 Timer/Counter Library"
 	depends on (AVR32 || ARCH_AT91)
@@ -84,7 +75,7 @@ config ATMEL_TCB_CLKSRC
 config ATMEL_TCB_CLKSRC_BLOCK
 	int
 	depends on ATMEL_TCB_CLKSRC
-	prompt "TC Block" if ARCH_AT91RM9200 || ARCH_AT91SAM9260 || CPU_AT32AP700X
+	prompt "TC Block" if CPU_AT32AP700X
 	default 0
 	range 0 1
 	help
@@ -104,6 +95,7 @@ config DUMMY_IRQ
 config IBM_ASM
 	tristate "Device driver for IBM RSA service processor"
 	depends on X86 && PCI && INPUT
+	depends on SERIAL_8250 || SERIAL_8250=n
 	---help---
 	  This option enables device driver support for in-band access to the
 	  IBM RSA (Condor) service processor in eServer xSeries systems.
@@ -135,7 +127,7 @@ config PHANTOM
 
 config INTEL_MID_PTI
 	tristate "Parallel Trace Interface for MIPI P1149.7 cJTAG standard"
-	depends on PCI && TTY
+	depends on PCI && TTY && (X86_INTEL_MID || COMPILE_TEST)
 	default n
 	help
 	  The PTI (Parallel Trace Interface) driver directs
@@ -200,7 +192,7 @@ config ICS932S401
 
 config ATMEL_SSC
 	tristate "Device driver for Atmel SSC peripheral"
-	depends on HAS_IOMEM
+	depends on HAS_IOMEM && (AVR32 || ARCH_AT91 || COMPILE_TEST)
 	---help---
 	  This option enables device driver support for Atmel Synchronized
 	  Serial Communication peripheral (SSC).
@@ -235,7 +227,7 @@ config SGI_XP
 
 config CS5535_MFGPT
 	tristate "CS5535/CS5536 Geode Multi-Function General Purpose Timer (MFGPT) support"
-	depends on PCI && X86 && MFD_CS5535
+	depends on MFD_CS5535
 	default n
 	help
 	  This driver provides access to MFGPT functionality for other
@@ -280,6 +272,16 @@ config HP_ILO
 	  To compile this driver as a module, choose M here: the
 	  module will be called hpilo.
 
+config QCOM_COINCELL
+	tristate "Qualcomm coincell charger support"
+	depends on MFD_SPMI_PMIC || COMPILE_TEST
+	help
+	  This driver supports the coincell block found inside of
+	  Qualcomm PMICs.  The coincell charger provides a means to
+	  charge a coincell battery or backup capacitor which is used
+	  to maintain PMIC register and RTC state in the absence of
+	  external power.
+
 config SGI_GRU
 	tristate "SGI GRU driver"
 	depends on X86_UV && SMP
@@ -300,8 +302,8 @@ config SGI_GRU_DEBUG
 	depends on SGI_GRU
 	default n
 	---help---
-	This option enables addition debugging code for the SGI GRU driver. If
-	you are unsure, say N.
+	This option enables additional debugging code for the SGI GRU driver.
+	If you are unsure, say N.
 
 config APDS9802ALS
 	tristate "Medfield Avago APDS9802 ALS Sensor module"
@@ -333,17 +335,6 @@ config ISL29020
 	  This driver can also be built as a module.  If so, the module
 	  will be called isl29020.
 
-config MOT_UTAG
-	tristate  "Motorola Configuration read/write support "
-	default n
-	help
-	  With this option you get read/write access to utag partition via procfs.
-	  Content of the entire partition can be checked, separate utags accessed
-	  and modified.
-
-	  This driver should be built as a module. The module will be called
-	  utags.ko.
-
 config SENSORS_TSL2550
 	tristate "Taos TSL2550 ambient light sensor"
 	depends on I2C && SYSFS
@@ -353,16 +344,6 @@ config SENSORS_TSL2550
 
 	  This driver can also be built as a module.  If so, the module
 	  will be called tsl2550.
-
-config SENSORS_BH1780
-	tristate "ROHM BH1780GLI ambient light sensor"
-	depends on I2C && SYSFS
-	help
-	  If you say yes here you get support for the ROHM BH1780GLI
-	  ambient light sensor.
-
-	  This driver can also be built as a module.  If so, the module
-	  will be called bh1780gli.
 
 config SENSORS_BH1770
          tristate "BH1770GLC / SFH7770 combined ALS - Proximity sensor"
@@ -391,19 +372,6 @@ config HMC6352
 	help
 	  This driver provides support for the Honeywell HMC6352 compass,
 	  providing configuration and heading data via sysfs.
-
-config EP93XX_PWM
-	tristate "EP93xx PWM support"
-	depends on ARCH_EP93XX
-	help
-	  This option enables device driver support for the PWM channels
-	  on the Cirrus EP93xx processors.  The EP9307 chip only has one
-	  PWM channel all the others have two, the second channel is an
-	  alternate function of the EGPIO14 pin.  A sysfs interface is
-	  provided to control the PWM channels.
-
-	  To compile this driver as a module, choose M here: the module will
-	  be called ep93xx_pwm.
 
 config DS1682
 	tristate "Dallas DS1682 Total Elapsed Time Recorder with Alarm"
@@ -435,13 +403,9 @@ config TI_DAC7512
 	  This driver can also be built as a module. If so, the module
 	  will be called ti_dac7512.
 
-config UID_STAT
-	bool "UID based statistics tracking exported to /proc/uid_stat"
-	default n
-
 config VMWARE_BALLOON
 	tristate "VMware Balloon Driver"
-	depends on X86 && HYPERVISOR_GUEST
+	depends on VMWARE_VMCI && X86 && HYPERVISOR_GUEST
 	help
 	  This is VMware physical memory management driver which acts
 	  like a "balloon" that can be inflated to reclaim physical pages
@@ -455,47 +419,10 @@ config VMWARE_BALLOON
 	  To compile this driver as a module, choose M here: the
 	  module will be called vmw_balloon.
 
-config ARM_CHARLCD
-	bool "ARM Ltd. Character LCD Driver"
-	depends on PLAT_VERSATILE
-	help
-	  This is a driver for the character LCD found on the ARM Ltd.
-	  Versatile and RealView Platform Baseboards. It doesn't do
-	  very much more than display the text "ARM Linux" on the first
-	  line and the Linux version on the second line, but that's
-	  still useful.
-
-config BMP085
-	tristate
-	depends on SYSFS
-
-config BMP085_I2C
-	tristate "BMP085 digital pressure sensor on I2C"
-	select BMP085
-	select REGMAP_I2C
-	depends on I2C && SYSFS
-	help
-	  Say Y here if you want to support Bosch Sensortec's digital pressure
-	  sensor hooked to an I2C bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called bmp085-i2c.
-
-config BMP085_SPI
-	tristate "BMP085 digital pressure sensor on SPI"
-	select BMP085
-	select REGMAP_SPI
-	depends on SPI_MASTER && SYSFS
-	help
-	  Say Y here if you want to support Bosch Sensortec's digital pressure
-	  sensor hooked to an SPI bus.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called bmp085-spi.
-
 config PCH_PHUB
 	tristate "Intel EG20T PCH/LAPIS Semicon IOH(ML7213/ML7223/ML7831) PHUB"
-	depends on PCI
+	select GENERIC_NET_UTILS
+	depends on PCI && (X86_32 || MIPS || COMPILE_TEST)
 	help
 	  This driver is for PCH(Platform controller Hub) PHUB(Packet Hub) of
 	  Intel Topcliff which is an IOH(Input/Output Hub) for x86 embedded
@@ -537,179 +464,79 @@ config SRAM
 	bool "Generic on-chip SRAM driver"
 	depends on HAS_IOMEM
 	select GENERIC_ALLOCATOR
+	select SRAM_EXEC if ARM
 	help
 	  This driver allows you to declare a memory region to be managed by
 	  the genalloc API. It is supposed to be used for small on-chip SRAM
 	  areas found on many SoCs.
 
-config APANIC_MMC
-	bool "Android kernel panic diagnostics driver on mmc"
-	default n
-	---help---
-	 Driver which handles kernel panics and attempts to write
-	 critical debugging data through mmc.
+config SRAM_EXEC
+	bool
 
-config APANIC_MMC_MEMDUMP
-	bool "Android memory dump driver on mmc"
-	depends on APANIC_MMC
-	default n
-	---help---
-	 Driver which handles kernel panics and attempts to write
-	 full memory dump through mmc.
-
-config APANIC_PLABEL
-	string "Android panic dump flash partition label"
-	depends on APANIC_MMC
-	default "kpanic"
-	---help---
-	 If your platform uses a different flash partition label for storing
-	 crashdumps, enter it here.
-
-config UID_CPUTIME
-	tristate "Per-UID cpu time statistics"
-	depends on PROFILING
-	help
-	  Per UID based cpu time statistics exported to /proc/uid_cputime
-
-config TSIF
-	depends on ARCH_MSM8X60 || ARCH_MSM8960 || ARCH_APQ8064
-	tristate "TSIF (Transport Stream InterFace) support"
-	default n
-	---help---
-	  This driver supports low level TSIF interface. It provides API
-	  for upper layer drivers. If you have a TSIF hardware, say
-	  Y here and read <file:Documentation/arm/msm/tsif.txt>.
-
-	  To compile this driver as module, choose M here: the
-	  module will be called msm_tsif.
-
-config TSIF_DEBUG
-	bool "Turn on debugging information for tsif driver"
-	depends on TSIF
-	default n
-	---help---
-	  This turns on debugging information for the tsif driver
-
-config HAPTIC_ISA1200
-	tristate "ISA1200 haptic support"
-	depends on I2C
-	default n
-	help
-	  The ISA1200 is a high performance enhanced haptic driver.
-
-config QSEECOM
-	tristate "Qualcomm Secure Execution Communicator driver"
-	help
-	  Provides a communication interface between userspace and
-	  Qualcomm Secure Execution Environment (QSEE) using Secure Channel
-	  Manager (SCM) interface.
-
-config QFP_FUSE
-	tristate "QFPROM Fuse Read/Write support"
-	help
-	  This option enables device driver to read/write QFPROM
-	  fuses. The ioctls provides the necessary interface
-	  to the fuse block. Currently this is supported only
-	  on FSM targets.
-
-config QPNP_MISC
-	tristate "QPNP Misc Peripheral"
-	depends on SPMI
-	help
-	  Say 'y' here to include support for the Qualcomm QPNP MISC
-	  peripheral. The MISC peripheral holds the USB ID interrupt
-	  and the driver provides an API to check if this interrupt
-	  is available on the current PMIC chip.
-
-config USB_HSIC_SMSC_HUB
-	tristate "Support for HSIC based MSM on-chip SMSC3503 HUB"
-	depends on USB_EHCI_MSM_HSIC
-	help
-	  Enables support for the HSIC (High Speed Inter-Chip) based
-	  SMSC3503 hub controller present on the Qualcomm chipsets.
-
-	  This adds support for connecting devices like mouse in HSIC
-	  Host mode.
-
-config TI_DRV2667
-	tristate "TI's DRV2667 haptic controller support"
-	depends on I2C
-	help
-	  The DRV2667 is a piezo haptic controller chip. It can drive
-	  piezo haptics either in digital mode or analog mode. This chip
-	  can be used in variety of devices to provide haptic support.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called ti_drv2667.
-
-config APQ8084_DOCKING_STATION
-	tristate "QTI APQ8084 Docking Station USB/Ethernet support"
-	depends on OF_GPIO
-	help
-	  This option enables support for the USB and Ethernet ports found on
-	  the QTI APQ8084 Docking Station.
-
-config HAPTIC_DRV2605
-	tristate "TI DRV2605 haptic driver"
-	depends on I2C && SYSFS
-	help
-	  If you say yes here you get support for the TI DRV2605
-	  haptic driver.
-
-config C55_CTRL
-	tristate "TI C55 Control driver"
-	help
-	  This option enables device driver to control the TI C55 IC. This
-	  is intended to be a simple driver which only exports the GPIOs
-	  for user space use.
-
-config MMI_FACTORY
-	tristate "Motorola Mobility Factory driver"
-	depends on OF
-	help
-	  This option enables a device driver that is collects many
-	  of the extensions needed by the Motorola factory.  If you
-	  aren't literally building a Motorola Device you can safely
-	  say no here.
-	default n
-
-config MMI_SAR
-	tristate "Motorola Mobility SAR driver"
-	help
-	  This option enables MMI-SAR device driver that provides interface
-	  to control max TX power and sends notifications to other kernel
-	  components when SAR cutback has to be applied.
-	default n
-
-config ALSA_TO_H2W
-	tristate "ALSA to H2W wired headset detection converter"
-	help
-	  This option enables a device driver that attach to the input queue and
-	  and exposes EV_SW events SW_HEADPHONE_INSERT & SW_MICROPHONE_INSERT in
-	  /sys/class/switch/h2w/state used by Android headset observer.
-	default n
-
-config DROPBOX
-	tristate "Dropbox sysfs support"
+config VEXPRESS_SYSCFG
+	bool "Versatile Express System Configuration driver"
+	depends on VEXPRESS_CONFIG
 	default y
 	help
-	  This option enables a sysfs interface for drivers to send text or
-	  binary events to the Android dropbox. A lightweight userspace daemon
-	  polls the sysfs files and copies the data into dropbox using the built
-	  in dropbox manager service.  This enables fast and simple logging of
-	  various critical events from kernel drivers.
+	  ARM Ltd. Versatile Express uses specialised platform configuration
+	  bus. System Configuration interface is one of the possible means
+	  of generating transactions on this bus.
+
+config ASPEED_LPC_CTRL
+	depends on (ARCH_ASPEED || COMPILE_TEST) && REGMAP && MFD_SYSCON
+	tristate "Aspeed ast2400/2500 HOST LPC to BMC bridge control"
+	---help---
+	  Control Aspeed ast2400/2500 HOST LPC to BMC mappings through
+	  ioctl()s, the driver also provides a read/write interface to a BMC ram
+	  region where the host LPC read/write region can be buffered.
+
+config ASPEED_LPC_SNOOP
+	tristate "Aspeed ast2500 HOST LPC snoop support"
+	depends on (ARCH_ASPEED || COMPILE_TEST) && REGMAP && MFD_SYSCON
+	help
+	  Provides a driver to control the LPC snoop interface which
+	  allows the BMC to listen on and save the data written by
+	  the host to an arbitrary LPC I/O port.
+
+config PCI_ENDPOINT_TEST
+	depends on PCI
+	select CRC32
+	tristate "PCI Endpoint Test driver"
+	---help---
+           Enable this configuration option to enable the host side test driver
+           for PCI Endpoint.
+
+config UID_SYS_STATS
+	bool "Per-UID statistics"
+	depends on PROFILING && TASK_XACCT && TASK_IO_ACCOUNTING
+	help
+	  Per UID based cpu time statistics exported to /proc/uid_cputime
+	  Per UID based io statistics exported to /proc/uid_io
+	  Per UID based procstat control in /proc/uid_procstat
+
+config UID_SYS_STATS_DEBUG
+	bool "Per-TASK statistics"
+	depends on UID_SYS_STATS
+	default n
+	help
+	  Per TASK based io statistics exported to /proc/uid_io
+
+config MEMORY_STATE_TIME
+	tristate "Memory freq/bandwidth time statistics"
+	depends on PROFILING
+	help
+	  Memory time statistics exported to /sys/kernel/memory_state_time
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
 source "drivers/misc/ti-st/Kconfig"
 source "drivers/misc/lis3lv02d/Kconfig"
-source "drivers/misc/carma/Kconfig"
 source "drivers/misc/altera-stapl/Kconfig"
 source "drivers/misc/mei/Kconfig"
 source "drivers/misc/vmw_vmci/Kconfig"
-source "drivers/misc/qcom/Kconfig"
-source "drivers/misc/sec/Kconfig"
-source "drivers/misc/stm401/Kconfig"
-source "drivers/misc/capsense_prog/Kconfig"
+source "drivers/misc/mic/Kconfig"
+source "drivers/misc/genwqe/Kconfig"
+source "drivers/misc/echo/Kconfig"
+source "drivers/misc/cxl/Kconfig"
 endmenu

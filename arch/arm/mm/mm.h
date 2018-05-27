@@ -1,6 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifdef CONFIG_MMU
 #include <linux/list.h>
 #include <linux/vmalloc.h>
+
+#include <asm/pgtable.h>
 
 /* the upper-most page table pointer */
 extern pmd_t *top_pmd;
@@ -38,6 +41,7 @@ static inline pmd_t *pmd_off_k(unsigned long virt)
 
 struct mem_type {
 	pteval_t prot_pte;
+	pteval_t prot_pte_s2;
 	pmdval_t prot_l1;
 	pmdval_t prot_sect;
 	unsigned int domain;
@@ -92,3 +96,5 @@ extern phys_addr_t arm_lowmem_limit;
 void __init bootmem_init(void);
 void arm_mm_memblock_reserve(void);
 void dma_contiguous_remap(void);
+
+unsigned long __clear_cr(unsigned long mask);

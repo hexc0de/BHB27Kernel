@@ -1,5 +1,6 @@
 #include <linux/export.h>
-#include <linux/sched.h>
+#include <linux/sched/signal.h>
+#include <linux/sched/task.h>
 #include <linux/fs.h>
 #include <linux/path.h>
 #include <linux/slab.h>
@@ -44,6 +45,7 @@ void set_fs_pwd(struct fs_struct *fs, const struct path *path)
 	if (old_pwd.dentry)
 		path_put(&old_pwd);
 }
+EXPORT_SYMBOL(set_fs_pwd);
 
 static inline int replace_path(struct path *p, const struct path *old, const struct path *new)
 {
@@ -89,6 +91,7 @@ void free_fs_struct(struct fs_struct *fs)
 	path_put(&fs->pwd);
 	kmem_cache_free(fs_cachep, fs);
 }
+EXPORT_SYMBOL(free_fs_struct);
 
 void exit_fs(struct task_struct *tsk)
 {
@@ -162,6 +165,6 @@ EXPORT_SYMBOL(current_umask);
 struct fs_struct init_fs = {
 	.users		= 1,
 	.lock		= __SPIN_LOCK_UNLOCKED(init_fs.lock),
-	.seq		= SEQCNT_ZERO,
+	.seq		= SEQCNT_ZERO(init_fs.seq),
 	.umask		= 0022,
 };

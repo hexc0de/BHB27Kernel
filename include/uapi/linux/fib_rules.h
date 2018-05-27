@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 #ifndef __LINUX_FIB_RULES_H
 #define __LINUX_FIB_RULES_H
 
@@ -48,9 +49,9 @@ enum {
 	FRA_UNUSED5,
 	FRA_FWMARK,	/* mark */
 	FRA_FLOW,	/* flow/class id */
-	FRA_UNUSED6,
-	FRA_UNUSED7,
-	FRA_UNUSED8,
+	FRA_TUN_ID,
+	FRA_SUPPRESS_IFGROUP,
+	FRA_SUPPRESS_PREFIXLEN,
 	FRA_TABLE,	/* Extended table id */
 	FRA_FWMASK,	/* mask for netfilter mark */
 	FRA_OIFNAME,

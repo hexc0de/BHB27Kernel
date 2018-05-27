@@ -1,5 +1,5 @@
 /*
- * drivers/gpu/ion/ion_mem_pool.c
+ * drivers/staging/android/ion/ion_mem_pool.c
  *
  * Copyright (C) 2011 Google, Inc.
  *
@@ -19,29 +19,19 @@
 #include <linux/err.h>
 #include <linux/fs.h>
 #include <linux/list.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/slab.h>
-#include <linux/vmalloc.h>
 #include <linux/swap.h>
-#include "ion_priv.h"
+
+#include "ion.h"
 
 static void *ion_page_pool_alloc_pages(struct ion_page_pool *pool)
 {
-	struct page *page;
-
-	page = alloc_pages(pool->gfp_mask & ~__GFP_ZERO, pool->order);
+	struct page *page = alloc_pages(pool->gfp_mask, pool->order);
 
 	if (!page)
 		return NULL;
-
-	if (pool->gfp_mask & __GFP_ZERO)
-		if (msm_ion_heap_high_order_page_zero(page, pool->order))
-			goto error_free_pages;
-
 	return page;
-error_free_pages:
-	__free_pages(page, pool->order);
-	return NULL;
 }
 
 static void ion_page_pool_free_pages(struct ion_page_pool *pool,
@@ -82,31 +72,30 @@ static struct page *ion_page_pool_remove(struct ion_page_pool *pool, bool high)
 	return page;
 }
 
-void *ion_page_pool_alloc(struct ion_page_pool *pool, bool *from_pool)
+struct page *ion_page_pool_alloc(struct ion_page_pool *pool)
 {
 	struct page *page = NULL;
 
 	BUG_ON(!pool);
 
-	*from_pool = true;
+	mutex_lock(&pool->mutex);
+	if (pool->high_count)
+		page = ion_page_pool_remove(pool, true);
+	else if (pool->low_count)
+		page = ion_page_pool_remove(pool, false);
+	mutex_unlock(&pool->mutex);
 
-	if (mutex_trylock(&pool->mutex)) {
-		if (pool->high_count)
-			page = ion_page_pool_remove(pool, true);
-		else if (pool->low_count)
-			page = ion_page_pool_remove(pool, false);
-		mutex_unlock(&pool->mutex);
-	}
-	if (!page) {
+	if (!page)
 		page = ion_page_pool_alloc_pages(pool);
-		*from_pool = false;
-	}
+
 	return page;
 }
 
 void ion_page_pool_free(struct ion_page_pool *pool, struct page *page)
 {
 	int ret;
+
+	BUG_ON(pool->order != compound_order(page));
 
 	ret = ion_page_pool_add(pool, page);
 	if (ret)
@@ -115,26 +104,29 @@ void ion_page_pool_free(struct ion_page_pool *pool, struct page *page)
 
 static int ion_page_pool_total(struct ion_page_pool *pool, bool high)
 {
-	int total = 0;
+	int count = pool->low_count;
 
-	total += high ? (pool->high_count + pool->low_count) *
-		(1 << pool->order) :
-			pool->low_count * (1 << pool->order);
-	return total;
+	if (high)
+		count += pool->high_count;
+
+	return count << pool->order;
 }
 
 int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
-				int nr_to_scan)
+			 int nr_to_scan)
 {
-	int i;
+	int freed = 0;
 	bool high;
 
 	if (current_is_kswapd())
-		high = 1;
+		high = true;
 	else
 		high = !!(gfp_mask & __GFP_HIGHMEM);
 
-	for (i = 0; i < nr_to_scan; i++) {
+	if (nr_to_scan == 0)
+		return ion_page_pool_total(pool, high);
+
+	while (freed < nr_to_scan) {
 		struct page *page;
 
 		mutex_lock(&pool->mutex);
@@ -148,25 +140,29 @@ int ion_page_pool_shrink(struct ion_page_pool *pool, gfp_t gfp_mask,
 		}
 		mutex_unlock(&pool->mutex);
 		ion_page_pool_free_pages(pool, page);
+		freed += (1 << pool->order);
 	}
 
-	return ion_page_pool_total(pool, high);
+	return freed;
 }
 
-struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order)
+struct ion_page_pool *ion_page_pool_create(gfp_t gfp_mask, unsigned int order,
+					   bool cached)
 {
-	struct ion_page_pool *pool = kmalloc(sizeof(struct ion_page_pool),
-					     GFP_KERNEL);
+	struct ion_page_pool *pool = kmalloc(sizeof(*pool), GFP_KERNEL);
+
 	if (!pool)
 		return NULL;
 	pool->high_count = 0;
 	pool->low_count = 0;
 	INIT_LIST_HEAD(&pool->low_items);
 	INIT_LIST_HEAD(&pool->high_items);
-	pool->gfp_mask = gfp_mask;
+	pool->gfp_mask = gfp_mask | __GFP_COMP;
 	pool->order = order;
 	mutex_init(&pool->mutex);
 	plist_node_init(&pool->list, order);
+	if (cached)
+		pool->cached = true;
 
 	return pool;
 }
@@ -180,10 +176,4 @@ static int __init ion_page_pool_init(void)
 {
 	return 0;
 }
-
-static void __exit ion_page_pool_exit(void)
-{
-}
-
-module_init(ion_page_pool_init);
-module_exit(ion_page_pool_exit);
+device_initcall(ion_page_pool_init);

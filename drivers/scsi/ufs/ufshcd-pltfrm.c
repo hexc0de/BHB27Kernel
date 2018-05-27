@@ -38,19 +38,9 @@
 #include <linux/of.h>
 
 #include "ufshcd.h"
+#include "ufshcd-pltfrm.h"
 
-static const struct of_device_id ufs_of_match[];
-static struct ufs_hba_variant_ops *get_variant_ops(struct device *dev)
-{
-	if (dev->of_node) {
-		const struct of_device_id *match;
-		match = of_match_node(ufs_of_match, dev->of_node);
-		if (match)
-			return (struct ufs_hba_variant_ops *)match->data;
-	}
-
-	return NULL;
-}
+#define UFSHCD_DEFAULT_LANES_PER_DIRECTION		2
 
 static int ufshcd_parse_clock_info(struct ufs_hba *hba)
 {
@@ -67,8 +57,6 @@ static int ufshcd_parse_clock_info(struct ufs_hba *hba)
 
 	if (!np)
 		goto out;
-
-	INIT_LIST_HEAD(&hba->clk_list_head);
 
 	cnt = of_property_count_strings(np, "clock-names");
 	if (!cnt || (cnt == -EINVAL)) {
@@ -101,7 +89,6 @@ static int ufshcd_parse_clock_info(struct ufs_hba *hba)
 	clkfreq = devm_kzalloc(dev, sz * sizeof(*clkfreq),
 			GFP_KERNEL);
 	if (!clkfreq) {
-		dev_err(dev, "%s: no memory\n", "freq-table-hz");
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -111,7 +98,7 @@ static int ufshcd_parse_clock_info(struct ufs_hba *hba)
 	if (ret && (ret != -EINVAL)) {
 		dev_err(dev, "%s: error reading array %d\n",
 				"freq-table-hz", ret);
-		goto out;
+		return ret;
 	}
 
 	for (i = 0; i < sz; i += 2) {
@@ -159,10 +146,8 @@ static int ufshcd_populate_vreg(struct device *dev, const char *name,
 	}
 
 	vreg = devm_kzalloc(dev, sizeof(*vreg), GFP_KERNEL);
-	if (!vreg) {
-		dev_err(dev, "No memory for %s regulator\n", name);
-		goto out;
-	}
+	if (!vreg)
+		return -ENOMEM;
 
 	vreg->name = kstrdup(name, GFP_KERNEL);
 
@@ -244,10 +229,11 @@ out:
  * Returns 0 if successful
  * Returns non-zero otherwise
  */
-static int ufshcd_pltfrm_suspend(struct device *dev)
+int ufshcd_pltfrm_suspend(struct device *dev)
 {
 	return ufshcd_system_suspend(dev_get_drvdata(dev));
 }
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_suspend);
 
 /**
  * ufshcd_pltfrm_resume - resume power management function
@@ -256,46 +242,62 @@ static int ufshcd_pltfrm_suspend(struct device *dev)
  * Returns 0 if successful
  * Returns non-zero otherwise
  */
-static int ufshcd_pltfrm_resume(struct device *dev)
+int ufshcd_pltfrm_resume(struct device *dev)
 {
 	return ufshcd_system_resume(dev_get_drvdata(dev));
 }
-#else
-#define ufshcd_pltfrm_suspend	NULL
-#define ufshcd_pltfrm_resume	NULL
-#endif
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_resume);
 
-#ifdef CONFIG_PM_RUNTIME
-static int ufshcd_pltfrm_runtime_suspend(struct device *dev)
+int ufshcd_pltfrm_runtime_suspend(struct device *dev)
 {
 	return ufshcd_runtime_suspend(dev_get_drvdata(dev));
 }
-static int ufshcd_pltfrm_runtime_resume(struct device *dev)
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_runtime_suspend);
+
+int ufshcd_pltfrm_runtime_resume(struct device *dev)
 {
 	return ufshcd_runtime_resume(dev_get_drvdata(dev));
 }
-static int ufshcd_pltfrm_runtime_idle(struct device *dev)
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_runtime_resume);
+
+int ufshcd_pltfrm_runtime_idle(struct device *dev)
 {
 	return ufshcd_runtime_idle(dev_get_drvdata(dev));
 }
-#else /* !CONFIG_PM_RUNTIME */
-#define ufshcd_pltfrm_runtime_suspend	NULL
-#define ufshcd_pltfrm_runtime_resume	NULL
-#define ufshcd_pltfrm_runtime_idle	NULL
-#endif /* CONFIG_PM_RUNTIME */
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_runtime_idle);
 
-static void ufshcd_pltfrm_shutdown(struct platform_device *pdev)
+#endif /* CONFIG_PM */
+
+void ufshcd_pltfrm_shutdown(struct platform_device *pdev)
 {
 	ufshcd_shutdown((struct ufs_hba *)platform_get_drvdata(pdev));
 }
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_shutdown);
+
+static void ufshcd_init_lanes_per_dir(struct ufs_hba *hba)
+{
+	struct device *dev = hba->dev;
+	int ret;
+
+	ret = of_property_read_u32(dev->of_node, "lanes-per-direction",
+		&hba->lanes_per_direction);
+	if (ret) {
+		dev_dbg(hba->dev,
+			"%s: failed to read lanes-per-direction, ret=%d\n",
+			__func__, ret);
+		hba->lanes_per_direction = UFSHCD_DEFAULT_LANES_PER_DIRECTION;
+	}
+}
 
 /**
- * ufshcd_pltfrm_probe - probe routine of the driver
+ * ufshcd_pltfrm_init - probe routine of the driver
  * @pdev: pointer to Platform device handle
+ * @vops: pointer to variant ops
  *
  * Returns 0 on success, non-zero value on failure
  */
-static int ufshcd_pltfrm_probe(struct platform_device *pdev)
+int ufshcd_pltfrm_init(struct platform_device *pdev,
+		       struct ufs_hba_variant_ops *vops)
 {
 	struct ufs_hba *hba;
 	void __iomem *mmio_base;
@@ -323,7 +325,7 @@ static int ufshcd_pltfrm_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	hba->vops = get_variant_ops(&pdev->dev);
+	hba->vops = vops;
 
 	err = ufshcd_parse_clock_info(hba);
 	if (err) {
@@ -341,12 +343,11 @@ static int ufshcd_pltfrm_probe(struct platform_device *pdev)
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 
-	if (!dev->dma_mask)
-		dev->dma_mask = &dev->coherent_dma_mask;
+	ufshcd_init_lanes_per_dir(hba);
 
 	err = ufshcd_init(hba, mmio_base, irq);
 	if (err) {
-		dev_err(dev, "Intialization failed\n");
+		dev_err(dev, "Initialization failed\n");
 		goto out_disable_rpm;
 	}
 
@@ -362,53 +363,10 @@ dealloc_host:
 out:
 	return err;
 }
-
-/**
- * ufshcd_pltfrm_remove - remove platform driver routine
- * @pdev: pointer to platform device handle
- *
- * Returns 0 on success, non-zero value on failure
- */
-static int ufshcd_pltfrm_remove(struct platform_device *pdev)
-{
-	struct ufs_hba *hba =  platform_get_drvdata(pdev);
-
-	pm_runtime_get_sync(&(pdev)->dev);
-	ufshcd_remove(hba);
-	ufshcd_dealloc_host(hba);
-	return 0;
-}
-
-static const struct of_device_id ufs_of_match[] = {
-	{ .compatible = "jedec,ufs-1.1"},
-	{ .compatible = "qcom,ufshc", .data = (void *)&ufs_hba_msm_vops, },
-	{},
-};
-
-static const struct dev_pm_ops ufshcd_dev_pm_ops = {
-	.suspend	= ufshcd_pltfrm_suspend,
-	.resume		= ufshcd_pltfrm_resume,
-	.runtime_suspend = ufshcd_pltfrm_runtime_suspend,
-	.runtime_resume  = ufshcd_pltfrm_runtime_resume,
-	.runtime_idle    = ufshcd_pltfrm_runtime_idle,
-};
-
-static struct platform_driver ufshcd_pltfrm_driver = {
-	.probe	= ufshcd_pltfrm_probe,
-	.remove	= ufshcd_pltfrm_remove,
-	.shutdown = ufshcd_pltfrm_shutdown,
-	.driver	= {
-		.name	= "ufshcd",
-		.owner	= THIS_MODULE,
-		.pm	= &ufshcd_dev_pm_ops,
-		.of_match_table = ufs_of_match,
-	},
-};
-
-module_platform_driver(ufshcd_pltfrm_driver);
+EXPORT_SYMBOL_GPL(ufshcd_pltfrm_init);
 
 MODULE_AUTHOR("Santosh Yaragnavi <santosh.sy@samsung.com>");
 MODULE_AUTHOR("Vinayak Holikatti <h.vinayak@samsung.com>");
-MODULE_DESCRIPTION("UFS host controller Pltform bus based glue driver");
+MODULE_DESCRIPTION("UFS host controller Platform bus based glue driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(UFSHCD_DRIVER_VERSION);
