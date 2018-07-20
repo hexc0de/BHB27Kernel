@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -314,7 +314,7 @@ error:
 	return -EPERM;
 }
 
-int __ipa_del_hdr(u32 hdr_hdl)
+int __ipa_del_hdr(u32 hdr_hdl, bool by_user)
 {
 	struct ipa_hdr_entry *entry;
 	struct ipa_hdr_tbl *htbl = &ipa_ctx->hdr_tbl;
@@ -332,6 +332,23 @@ int __ipa_del_hdr(u32 hdr_hdl)
 
 	IPADBG("del hdr of sz=%d hdr_cnt=%d ofst=%d\n", entry->hdr_len,
 			htbl->hdr_cnt, entry->offset_entry->offset);
+
+	if (by_user && entry->user_deleted) {
+		IPAERR("hdr already deleted by user\n");
+		return -EINVAL;
+	}
+
+	if (by_user) {
+		if (!strcmp(entry->name, IPA_LAN_RX_HDR_NAME)) {
+			IPADBG("Trying to delete hdr %s offset=%u\n",
+				entry->name, entry->offset_entry->offset);
+			if (!entry->offset_entry->offset) {
+				IPAERR("User cannot delete default header\n");
+				return -EPERM;
+			}
+		}
+		entry->user_deleted = true;
+	}
 
 	if (--entry->ref_cnt) {
 		IPADBG("hdr_hdl %x ref_cnt %d\n", hdr_hdl, entry->ref_cnt);
@@ -398,15 +415,16 @@ bail:
 EXPORT_SYMBOL(ipa_add_hdr);
 
 /**
- * ipa_del_hdr() - Remove the specified headers from SW and optionally commit them
- * to IPA HW
+ * ipa_del_hdr_by_user() - Remove the specified headers
+ * from SW and optionally commit them to IPA HW
  * @hdls:	[inout] set of headers to delete
+ * @by_user:	Operation requested by user?
  *
  * Returns:	0 on success, negative on failure
  *
  * Note:	Should not be called from atomic context
  */
-int ipa_del_hdr(struct ipa_ioc_del_hdr *hdls)
+int ipa_del_hdr_by_user(struct ipa_ioc_del_hdr *hdls, bool by_user)
 {
 	int i;
 	int result = -EFAULT;
@@ -418,7 +436,7 @@ int ipa_del_hdr(struct ipa_ioc_del_hdr *hdls)
 
 	mutex_lock(&ipa_ctx->lock);
 	for (i = 0; i < hdls->num_hdls; i++) {
-		if (__ipa_del_hdr(hdls->hdl[i].hdl)) {
+		if (__ipa_del_hdr(hdls->hdl[i].hdl, by_user)) {
 			IPAERR("failed to del hdr %i\n", i);
 			hdls->hdl[i].status = -1;
 		} else {
@@ -436,6 +454,20 @@ int ipa_del_hdr(struct ipa_ioc_del_hdr *hdls)
 bail:
 	mutex_unlock(&ipa_ctx->lock);
 	return result;
+}
+
+/**
+ * ipa_del_hdr() - Remove the specified headers from SW and optionally commit them
+ * to IPA HW
+ * @hdls:	[inout] set of headers to delete
+ *
+ * Returns:	0 on success, negative on failure
+ *
+ * Note:	Should not be called from atomic context
+ */
+int ipa_del_hdr(struct ipa_ioc_del_hdr *hdls)
+{
+	return ipa_del_hdr_by_user(hdls, false);
 }
 EXPORT_SYMBOL(ipa_del_hdr);
 
@@ -501,10 +533,20 @@ int ipa_reset_hdr(void)
 	list_for_each_entry_safe(entry, next,
 			&ipa_ctx->hdr_tbl.head_hdr_entry_list, link) {
 
-		/* do not remove the default exception header */
-		if (!strncmp(entry->name, IPA_A5_MUX_HDR_NAME,
-					IPA_RESOURCE_NAME_MAX))
-			continue;
+		/* do not remove the default header */
+		if (!strcmp(entry->name, IPA_LAN_RX_HDR_NAME)) {
+			IPADBG("Trying to remove hdr %s offset=%u\n",
+				entry->name, entry->offset_entry->offset);
+			if (!entry->offset_entry->offset) {
+				if (entry->is_hdr_proc_ctx) {
+					mutex_unlock(&ipa_ctx->lock);
+					WARN_ON(1);
+					return -EFAULT;
+				}
+				IPADBG("skip default header\n");
+				continue;
+			}
+		}
 
 		if (ipa_id_find(entry->id) == NULL) {
 			WARN_ON(1);
@@ -606,7 +648,7 @@ int __ipa_release_hdr(u32 hdr_hdl)
 {
 	int result = 0;
 
-	if (__ipa_del_hdr(hdr_hdl)) {
+	if (__ipa_del_hdr(hdr_hdl, false)) {
 		IPADBG("fail to del hdr %x\n", hdr_hdl);
 		result = -EFAULT;
 		goto bail;

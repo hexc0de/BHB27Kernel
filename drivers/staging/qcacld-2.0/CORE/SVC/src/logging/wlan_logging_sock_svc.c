@@ -128,7 +128,7 @@ static int wlan_send_sock_msg_to_app(tAniHdr *wmsg, int radio,
 		return -EINVAL;
 	}
 
-	payload_len = wmsg_length + sizeof(wnl->radio);
+	payload_len = wmsg_length + sizeof(wnl->radio) + sizeof(tAniHdr);
 	tot_msg_len = NLMSG_SPACE(payload_len);
 	skb = dev_alloc_skb(tot_msg_len);
 	if (skb == NULL) {
@@ -241,14 +241,6 @@ static int wlan_queue_logmsg_for_app(void)
 		gwlan_logging.pcur_node =
 			(struct log_msg *)(gwlan_logging.filled_list.next);
 		++gwlan_logging.drop_count;
-		/* print every 64th drop count */
-		if (vos_is_multicast_logging() &&
-				(!(gwlan_logging.drop_count % 0x40))) {
-			pr_info("%s: drop_count = %u index = %d filled_length = %d\n",
-				__func__, gwlan_logging.drop_count,
-				gwlan_logging.pcur_node->index,
-				gwlan_logging.pcur_node->filled_length);
-		}
 		list_del_init(gwlan_logging.filled_list.next);
 		ret = 1;
 	}
@@ -326,11 +318,9 @@ int wlan_log_to_user(VOS_TRACE_LEVEL log_level, char *to_be_sent, int length)
 		 * Continue and copy logs to the available length and
 		 * discard the rest.
 		 */
-		if (MAX_LOGMSG_LENGTH < (sizeof(tAniNlHdr) + total_log_len)) {
-			VOS_ASSERT(0);
+		if (MAX_LOGMSG_LENGTH < (sizeof(tAniNlHdr) + total_log_len))
 			total_log_len = MAX_LOGMSG_LENGTH -
 						sizeof(tAniNlHdr) - 2;
-		}
 
 		memcpy(&ptr[*pfilled_length], tbuf, tlen);
 		memcpy(&ptr[*pfilled_length + tlen], to_be_sent,
@@ -527,7 +517,6 @@ static int wlan_logging_thread(void *Arg)
 		}
 
 		if (gwlan_logging.exit) {
-			pr_err("%s: Exiting the thread\n", __func__);
 			break;
 		}
 
@@ -571,7 +560,6 @@ static int wlan_logging_thread(void *Arg)
 		}
 	}
 
-	pr_info("%s: Terminating\n", __func__);
 
 	complete_and_exit(&gwlan_logging.shutdown_comp, 0);
 
@@ -596,6 +584,13 @@ static int wlan_logging_proc_sock_rx_msg(struct sk_buff *skb)
 		LOGGING_TRACE(VOS_TRACE_LEVEL_ERROR,
 				"%s: invalid radio id [%d]\n",
 				__func__, radio);
+		return -EINVAL;
+	}
+
+	if (wnl->wmsg.length > skb->data_len) {
+		LOGGING_TRACE(VOS_TRACE_LEVEL_ERROR,
+			"%s: invalid length msgLen:%x skb data_len:%x\n",
+			__func__, wnl->wmsg.length, skb->data_len);
 		return -EINVAL;
 	}
 
@@ -634,8 +629,6 @@ int wlan_logging_sock_activate_svc(int log_fe_to_console, int num_buf)
 	int i = 0;
 	unsigned long irq_flag;
 
-	pr_info("%s: Initalizing FEConsoleLog = %d NumBuff = %d\n",
-			__func__, log_fe_to_console, num_buf);
 
 	gapp_pid = INVALID_PID;
 
@@ -688,7 +681,6 @@ int wlan_logging_sock_activate_svc(int log_fe_to_console, int num_buf)
 
 	nl_srv_register(ANI_NL_MSG_LOG, wlan_logging_proc_sock_rx_msg);
 
-	pr_info("%s: Activated wlan_logging svc\n", __func__);
 	return 0;
 }
 
@@ -720,7 +712,6 @@ int wlan_logging_sock_deactivate_svc(void)
 	gwlan_logging.pcur_node = NULL;
 	spin_unlock_irqrestore(&gwlan_logging.spin_lock, irq_flag);
 
-	pr_info("%s: Deactivate wlan_logging svc\n", __func__);
 
 	return 0;
 }

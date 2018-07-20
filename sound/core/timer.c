@@ -243,7 +243,8 @@ int snd_timer_open(struct snd_timer_instance **ti,
 		/* open a slave instance */
 		if (tid->dev_sclass <= SNDRV_TIMER_SCLASS_NONE ||
 		    tid->dev_sclass > SNDRV_TIMER_SCLASS_OSS_SEQUENCER) {
-			snd_printd("invalid slave class %i\n", tid->dev_sclass);
+			pr_debug("ALSA: timer: invalid slave class %i\n",
+				 tid->dev_sclass);
 			return -EINVAL;
 		}
 		mutex_lock(&register_mutex);
@@ -408,7 +409,7 @@ static void snd_timer_notify1(struct snd_timer_instance *ti, int event)
 	struct timespec tstamp;
 
 	if (timer_tstamp_monotonic)
-		do_posix_clock_monotonic_gettime(&tstamp);
+		ktime_get_ts(&tstamp);
 	else
 		getnstimeofday(&tstamp);
 	if (snd_BUG_ON(event < SNDRV_TIMER_EVENT_START ||
@@ -824,7 +825,7 @@ int snd_timer_new(struct snd_card *card, char *id, struct snd_timer_id *tid,
 		*rtimer = NULL;
 	timer = kzalloc(sizeof(*timer), GFP_KERNEL);
 	if (timer == NULL) {
-		snd_printk(KERN_ERR "timer: cannot allocate\n");
+		pr_err("ALSA: timer: cannot allocate\n");
 		return -ENOMEM;
 	}
 	timer->tmr_class = tid->dev_class;
@@ -864,7 +865,7 @@ static int snd_timer_free(struct snd_timer *timer)
 	if (! list_empty(&timer->open_list_head)) {
 		struct list_head *p, *n;
 		struct snd_timer_instance *ti;
-		snd_printk(KERN_WARNING "timer %p is busy?\n", timer);
+		pr_warn("ALSA: timer %p is busy?\n", timer);
 		list_for_each_safe(p, n, &timer->open_list_head) {
 			list_del_init(p);
 			ti = list_entry(p, struct snd_timer_instance, open_list);
@@ -1099,9 +1100,7 @@ static int snd_timer_register_system(void)
 		snd_timer_free(timer);
 		return -ENOMEM;
 	}
-	init_timer(&priv->tlist);
-	priv->tlist.function = snd_timer_s_function;
-	priv->tlist.data = (unsigned long) timer;
+	setup_timer(&priv->tlist, snd_timer_s_function, (unsigned long) timer);
 	timer->private_data = priv;
 	timer->private_free = snd_timer_free_system;
 	return snd_timer_global_register(timer);
@@ -1275,7 +1274,7 @@ static void snd_timer_user_tinterrupt(struct snd_timer_instance *timeri,
 	}
 	if (tu->last_resolution != resolution || ticks > 0) {
 		if (timer_tstamp_monotonic)
-			do_posix_clock_monotonic_gettime(&tstamp);
+			ktime_get_ts(&tstamp);
 		else
 			getnstimeofday(&tstamp);
 	}
@@ -1979,6 +1978,7 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 
 		qhead = tu->qhead++;
 		tu->qhead %= tu->queue_size;
+		tu->qused--;
 		spin_unlock_irq(&tu->qlock);
 
 		mutex_lock(&tu->ioctl_lock);
@@ -1994,7 +1994,6 @@ static ssize_t snd_timer_user_read(struct file *file, char __user *buffer,
 		mutex_unlock(&tu->ioctl_lock);
 
 		spin_lock_irq(&tu->qlock);
-		tu->qused--;
 		if (err < 0)
 			goto _error;
 		result += unit;
@@ -2057,12 +2056,10 @@ static int __init alsa_timer_init(void)
 #endif
 
 	if ((err = snd_timer_register_system()) < 0)
-		snd_printk(KERN_ERR "unable to register system timer (%i)\n",
-			   err);
+		pr_err("ALSA: unable to register system timer (%i)\n", err);
 	if ((err = snd_register_device(SNDRV_DEVICE_TYPE_TIMER, NULL, 0,
 				       &snd_timer_f_ops, NULL, "timer")) < 0)
-		snd_printk(KERN_ERR "unable to register timer device (%i)\n",
-			   err);
+		pr_err("ALSA: unable to register timer device (%i)\n", err);
 	snd_timer_proc_init();
 	return 0;
 }
