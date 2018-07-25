@@ -1130,7 +1130,7 @@ CONFIG_BQL=y
 # CONFIG_CAN is not set
 # CONFIG_IRDA is not set
 CONFIG_BT=y
-#CONFIG_BT_RFCOMM=y
+CONFIG_BT_RFCOMM=y
 # CONFIG_BT_BNEP is not set
 # CONFIG_BT_HIDP is not set
 
