@@ -64,6 +64,14 @@
 #define AID_SDCARD_AV     1034
 #define AID_SDCARD_ALL    1035
 
+#define KAID_ROOT          KUIDT_INIT(0)
+#define KAID_SDCARD_RW     KUIDT_INIT(1015)
+#define KAID_MEDIA_RW      KUIDT_INIT(1023)
+#define KAID_SDCARD_R      KUIDT_INIT(1028)
+#define KAID_SDCARD_PICS   KUIDT_INIT(1033)
+#define KAID_SDCARD_AV     KUIDT_INIT(1034)
+#define KAID_SDCARD_ALL    KUIDT_INIT(1035)
+
 /* used in extra persmission check during file creation */
 #define ESDFS_MAY_CREATE	0x00001000
 
@@ -374,10 +382,10 @@ static inline void unlock_dir(struct dentry *dir)
 
 /* permission overriders */
 static inline void esdfs_set_lower_owner(struct esdfs_sb_info *sbi,
-		uid_t *uid, gid_t *gid)
+		kuid_t *uid, kgid_t *gid)
 {
-	*uid = sbi->lower_perms.uid;
-	*gid = sbi->lower_perms.gid;
+	*uid = make_kuid(&init_user_ns, sbi->lower_perms.uid);
+	*gid = make_kgid(&init_user_ns, sbi->lower_perms.gid);
 }
 
 static inline void esdfs_set_lower_mode(struct esdfs_sb_info *sbi,
@@ -390,10 +398,10 @@ static inline void esdfs_set_lower_mode(struct esdfs_sb_info *sbi,
 }
 
 static inline void esdfs_set_upper_owner(struct esdfs_sb_info *sbi,
-		uid_t *uid, gid_t *gid)
+		kuid_t *uid, kgid_t *gid)
 {
-	*uid = sbi->upper_perms.uid;
-	*gid = sbi->upper_perms.gid;
+	*uid = make_kuid(&init_user_ns, sbi->upper_perms.uid);
+	*gid = make_kgid(&init_user_ns, sbi->upper_perms.gid);
 }
 
 static inline void esdfs_set_upper_mode(struct esdfs_sb_info *sbi,
@@ -497,8 +505,8 @@ static inline const struct cred *esdfs_override_creds(
 		*mask = xchg(&current->fs->umask, *mask & S_IRWXUGO);
 	}
 
-	creds->fsuid = sbi->lower_perms.uid;
-	creds->fsgid = sbi->lower_perms.gid;
+	creds->fsuid = make_kuid(&init_user_ns, sbi->lower_perms.uid);
+	creds->fsgid = make_kgid(&init_user_ns, sbi->lower_perms.gid);
 	esdfs_override_secid(sbi, creds);
 
 	/* this installs the new creds into current, which we must destroy */

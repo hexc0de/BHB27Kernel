@@ -371,16 +371,16 @@ void esdfs_set_derived_perms(struct inode *inode)
 	struct esdfs_inode_info *inode_i = ESDFS_I(inode);
 	gid_t gid = sbi->upper_perms.gid;
 
-	inode->i_uid = sbi->upper_perms.uid;
+	inode->i_uid = KUIDT_INIT(sbi->upper_perms.uid);
 	inode->i_mode &= S_IFMT;
 	if (ESDFS_RESTRICT_PERMS(sbi))
-		inode->i_gid = gid;
+		inode->i_gid = KGIDT_INIT(gid);
 	else {
 		if (gid == AID_SDCARD_RW)
-			inode->i_gid = AID_SDCARD_RW;
+			inode->i_gid = KGIDT_INIT(AID_SDCARD_RW);
 		else
-			inode->i_gid = inode_i->userid * PKG_APPID_PER_USER +
-				       (gid % PKG_APPID_PER_USER);
+			inode->i_gid = KGIDT_INIT(inode_i->userid * PKG_APPID_PER_USER +
+				       (gid % PKG_APPID_PER_USER));
 		inode->i_mode |= sbi->upper_perms.dmask;
 	}
 
@@ -397,7 +397,7 @@ void esdfs_set_derived_perms(struct inode *inode)
 	case ESDFS_TREE_NONE:
 	case ESDFS_TREE_ROOT:
 		if (ESDFS_RESTRICT_PERMS(sbi)) {
-			inode->i_gid = AID_SDCARD_R;
+			inode->i_gid = KGIDT_INIT(AID_SDCARD_R);
 			inode->i_mode |= sbi->upper_perms.dmask;
 		} else if (test_opt(sbi, DERIVE_PUBLIC)) {
 			inode->i_mode &= S_IFMT;
@@ -407,7 +407,7 @@ void esdfs_set_derived_perms(struct inode *inode)
 
 	case ESDFS_TREE_MEDIA:
 		if (ESDFS_RESTRICT_PERMS(sbi)) {
-			inode->i_gid = AID_SDCARD_R;
+			inode->i_gid = KGIDT_INIT(AID_SDCARD_R);
 			inode->i_mode |= 0770;
 		}
 		break;
@@ -422,15 +422,15 @@ void esdfs_set_derived_perms(struct inode *inode)
 
 	case ESDFS_TREE_ANDROID_APP:
 		if (inode_i->appid)
-			inode->i_uid = inode_i->userid * PKG_APPID_PER_USER +
-				       (inode_i->appid % PKG_APPID_PER_USER);
+			inode->i_uid = KUIDT_INIT(inode_i->userid * PKG_APPID_PER_USER +
+							       (inode_i->appid % PKG_APPID_PER_USER));
 		if (ESDFS_RESTRICT_PERMS(sbi))
 			inode->i_mode |= 0770;
 		break;
 
 	case ESDFS_TREE_ANDROID_USER:
 		if (ESDFS_RESTRICT_PERMS(sbi)) {
-			inode->i_gid = AID_SDCARD_ALL;
+			inode->i_gid = KGIDT_INIT(AID_SDCARD_ALL);
 			inode->i_mode |= 0770;
 		}
 		break;
@@ -536,11 +536,11 @@ int esdfs_check_derived_permission(struct inode *inode, int mask)
 			return 0;
 
 	cred = current_cred();
-	appid = cred->uid % PKG_APPID_PER_USER;
+	appid = __kuid_val(cred->uid) % PKG_APPID_PER_USER;
 
 	/* Reads, owners, and root are always granted access */
 	if (!(mask & (MAY_WRITE | ESDFS_MAY_CREATE)) ||
-	    cred->uid == 0 || cred->uid == inode->i_uid)
+	    uid_eq(cred->uid, GLOBAL_ROOT_UID) || uid_eq(cred->uid, inode->i_uid))
 		return 0;
 
 	/*

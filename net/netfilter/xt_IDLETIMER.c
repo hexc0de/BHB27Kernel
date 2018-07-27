@@ -74,7 +74,7 @@ struct idletimer_tg {
 	bool work_pending;
 	bool send_nl_msg;
 	bool active;
-	uid_t uid;
+	kuid_t uid;
 };
 
 static LIST_HEAD(idletimer_tg_list);
@@ -144,7 +144,8 @@ static void notify_netlink_uevent(const char *iface, struct idletimer_tg *timer)
 	}
 
 	if (state) {
-		res = snprintf(uid_msg, NLMSG_MAX_SIZE, "UID=%u", timer->uid);
+		res = snprintf(uid_msg, NLMSG_MAX_SIZE, "UID=%u",
+			from_kuid(&init_user_ns, timer->uid));
 		if (NLMSG_MAX_SIZE <= res)
 			pr_err("message too long (%d)", res);
 	} else {
@@ -310,7 +311,7 @@ static int idletimer_tg_create(struct idletimer_tg_info *info)
 	info->timer->delayed_timer_trigger.tv_sec = 0;
 	info->timer->delayed_timer_trigger.tv_nsec = 0;
 	info->timer->work_pending = false;
-	info->timer->uid = 0;
+	info->timer->uid = GLOBAL_ROOT_UID;
 	get_monotonic_boottime(&info->timer->last_modified_timer);
 
 	info->timer->pm_nb.notifier_call = idletimer_resume;
